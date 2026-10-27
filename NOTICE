@@ -4,5 +4,10 @@ Required Notice: Copyright (c) 2026 kur0neko
 Upstream license: PolyForm Noncommercial 1.0.0
 https://polyformproject.org/licenses/noncommercial/1.0.0/
 
+The PLQ110/THN31 Root Q-poll, owned NFC session hook, NCI DATA transport,
+and their regression tests are ported from the Android probe in the same project.
+Required Notice: Copyright (c) 2026 kur0neko
+See docs/THN31_BACKEND.md for scope, integration changes and validation limits.
+
 Frida 17.24.0 Android arm64 injector is bundled under the wxWindows Library Licence.
 See assets/FRIDA-COPYING.txt and assets/NOTICE.txt for attribution and checksum.

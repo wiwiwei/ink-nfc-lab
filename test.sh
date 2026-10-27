@@ -24,3 +24,4 @@ node tests/mifare_compat_test.js
 bash tests/profile_collector_test.sh
 "$java_path/bin/javac" --release 8 -encoding UTF-8 -cp build/tests -d build/tests src/dev/inknfclab/PollingConfigSession.java tests/PollingConfigSessionTest.java
 "$java_path/bin/java" -cp build/tests dev.inknfclab.PollingConfigSessionTest
+bash tests/thn31_test.sh

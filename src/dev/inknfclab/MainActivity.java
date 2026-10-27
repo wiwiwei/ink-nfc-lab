@@ -200,7 +200,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
                 return;
             }
             new AlertDialog.Builder(this).setTitle("连接方式")
-                    .setItems(new String[]{"自动 · 仅已验证机型启用 Root 后端", "标准 NFC · 不请求 Root"}, (dialog, which) -> {
+                    .setItems(new String[]{"自动 · 按控制器选择连接方式", "标准 NFC · 不请求 Root"}, (dialog, which) -> {
                         standardOnly = which == 1;
                         connectionChoice.setText(standardOnly ? "连接方式 · 标准 NFC" : "连接方式 · 自动");
                         compatibilityState.setText(usesRootBackend() ? "Root 后端 · 下次会话生效" : "标准 NFC · 不请求 Root");
@@ -419,7 +419,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         try { path = getPackageManager().getApplicationInfo("com.android.nfc", 0).sourceDir; }
         catch (Exception ignored) {}
         StringBuilder properties = new StringBuilder();
-        for (String key : new String[]{"ro.strongbox.model", "ro.vendor.nfc.chip", "ro.boot.nfc", "ro.vendor.nfc.model"}) {
+        for (String key : new String[]{"ro.strongbox.model", "ro.vendor.nfc.chip", "ro.boot.nfc", "ro.vendor.nfc.model", "persist.sys.nfc.chip_name"}) {
             try {
                 Process process = new ProcessBuilder("getprop", key).start();
                 if (!process.waitFor(1, TimeUnit.SECONDS)) { process.destroy(); continue; }
@@ -437,6 +437,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         runOnUiThread(() -> {
             if (nfcChipView == null || isDestroyed()) return;
             nfcChipView.setText("NFC 控制器 · " + (shown == NfcVendor.Kind.NXP ? "NXP · ADB / Root"
+                    : shown == NfcVendor.Kind.THN31 ? "THN31 · Root"
                     : shown == NfcVendor.Kind.ST ? "ST · 需要 Root" : "未能可靠识别 · 可手动选择"));
         });
     }
@@ -674,7 +675,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         uploadRequested = false;
         Process process = rootProcess;
         File stopMarker = nxpStopFile;
-        if (stopMarker != null) try { stopMarker.createNewFile(); } catch (Exception error) { log("NXP 停止标记失败：" + error); }
+        if (stopMarker != null) try { stopMarker.createNewFile(); } catch (Exception error) { log("停止标记失败：" + error); }
         if (process != null) requestStop(process);
         disableReader();
         state.setText(standardSession ? "正在停止标准 NFC 会话" : "正在停止并恢复");
@@ -902,6 +903,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         }
         if (!standardOnly) {
             if (nfcVendor == NfcVendor.Kind.NXP) { chooseNxpBackend(); return; }
+            if (nfcVendor == NfcVendor.Kind.THN31) { chooseThn31Backend(); return; }
             if (nfcVendor == NfcVendor.Kind.ST) { chooseStBackend(); return; }
             new AlertDialog.Builder(this).setTitle("NFC 控制器未能可靠识别")
                     .setMessage("不会仅凭系统中存在配置文件判断厂商。可尝试 NXP Q-Poll，或使用电脑 PN532/PCR532 方案；未经验证的 ST 机型不能自动套用小米 17 补丁。")
@@ -935,14 +937,26 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
                 .setNegativeButton("取消", null).show();
     }
 
+    private void chooseThn31Backend() {
+        new AlertDialog.Builder(this).setTitle("THN31 Root 刷写")
+                .setMessage("THN31 Root 路线不限制手机型号或 Android 版本，运行前会检查所需系统接口。将覆盖屏幕画面；请保持手机亮屏解锁及屏幕贴合。也可先仅读取 D1，不写图像。")
+                .setPositiveButton("确认覆盖并刷写", (dialog, which) -> startRootBackend(true, false))
+                .setNeutralButton("仅读 D1", (dialog, which) -> startRootBackend(true, true))
+                .setNegativeButton("取消", null).show();
+    }
+
     private File prepareNxpImage() throws Exception {
+        return prepareBackendImage(false);
+    }
+
+    private File prepareBackendImage(boolean thn31) throws Exception {
         ImageCodec.PreparedImage frame = preparedImage;
         if (frame == null) throw new IllegalStateException("请先准备图片");
-        File folder = getExternalFilesDir(null);
+        File folder = thn31 ? getFilesDir() : getExternalFilesDir(null);
         if (folder == null) throw new IllegalStateException("外部应用目录不可用，无法交给 ADB Shell");
-        File image = new File(folder, "nxp-image.bin");
+        File image = new File(folder, thn31 ? "thn31-image.bin" : "nxp-image.bin");
         try (FileOutputStream output = new FileOutputStream(image)) { output.write(frame.packed); }
-        File stop = new File(folder, "nxp-stop");
+        File stop = new File(folder, thn31 ? "thn31-stop" : "nxp-stop");
         if (stop.exists() && !stop.delete()) throw new IllegalStateException("无法清除上次停止标记");
         nxpStopFile = stop;
         return image;
@@ -972,17 +986,24 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
     }
 
     private void startNxpRoot() {
+        startRootBackend(false, false);
+    }
+
+    private void startRootBackend(boolean thn31, boolean readOnly) {
         if (busy) return;
+        final String label = thn31 ? "THN31" : "NXP";
         try {
-            File image = prepareNxpImage();
+            File image = prepareBackendImage(thn31);
             String command = "CLASSPATH='" + getPackageCodePath().replace("'", "'\\''")
-                    + "' /system/bin/app_process /system/bin dev.inknfclab.NxpQPollWorker '"
-                    + image.getAbsolutePath().replace("'", "'\\''") + "' '"
+                    + "' " + (thn31 ? "/system/bin/nsenter -t 1 -m " : "")
+                    + "/system/bin/app_process /system/bin "
+                    + (thn31 ? "dev.inknfclab.thn31.Thn31Worker" : "dev.inknfclab.NxpQPollWorker") + " '"
+                    + (readOnly ? "--read" : image.getAbsolutePath().replace("'", "'\\''")) + "' '"
                     + nxpStopFile.getAbsolutePath().replace("'", "'\\''") + "'";
             busy = true;
             stopped = cancelled = false;
             setBusy(true);
-            state.setText("NXP Root · 等待驱动板");
+            state.setText(label + " Root · 等待驱动板");
             rootWork.execute(() -> {
                 try {
                     Process process = new ProcessBuilder("su", "-c", command).redirectErrorStream(true).start();
@@ -994,8 +1015,8 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
                                 if (marker != null) marker.createNewFile();
                                 if (!process.waitFor(10, TimeUnit.SECONDS)) process.destroy();
                             }
-                        } catch (Exception error) { log("NXP_WATCHDOG · " + error); }
-                    }, "ink-nxp-watchdog");
+                        } catch (Exception error) { log(label + "_WATCHDOG · " + error); }
+                    }, "ink-" + label.toLowerCase(Locale.ROOT) + "-watchdog");
                     watchdog.setDaemon(true);
                     watchdog.start();
                     try (BufferedReader input = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -1004,7 +1025,11 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
                             log(line);
                             String event = line;
                             runOnUiThread(() -> {
-                                if (event.startsWith("NXP|COMPLETE|")) state.setText("NXP 刷屏完成");
+                                if (event.startsWith("THN31|COMPLETE|")) state.setText(readOnly ? "THN31 D1 校验通过" : "THN31 刷屏完成 · 请目视确认");
+                                else if (event.startsWith("THN31|ERROR|")) { state.setText("THN31 会话失败"); device.setText(event); }
+                                else if (event.startsWith("THN31|READY|")) state.setText("THN31 · 请保持贴合");
+                                else if (event.startsWith("THN31|PROGRESS|")) state.setText(event.substring(15));
+                                else if (event.startsWith("NXP|COMPLETE|")) state.setText("NXP 刷屏完成");
                                 else if (event.startsWith("NXP|ERROR|")) { state.setText("NXP 刷写失败"); device.setText(event); }
                                 else if (event.startsWith("NXP|READY|")) state.setText("NXP QTag 已接受 · 等待驱动板");
                                 else if (event.startsWith("NXP|PROGRESS|")) state.setText(event.substring(13));
@@ -1015,10 +1040,10 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
                         nxpStopFile.createNewFile();
                         if (!process.waitFor(10, TimeUnit.SECONDS)) process.destroy();
                     }
-                    if (process.exitValue() != 0) runOnUiThread(() -> state.setText("NXP 会话未完成 · 请查看日志"));
+                    if (process.exitValue() != 0) runOnUiThread(() -> state.setText(label + " 会话未完成 · 请查看日志"));
                 } catch (Exception error) {
-                    log("NXP_ROOT_ERROR · " + error);
-                    runOnUiThread(() -> { state.setText("NXP Root 启动失败"); device.setText(error.toString()); });
+                    log(label + "_ROOT_ERROR · " + error);
+                    runOnUiThread(() -> { state.setText(label + " Root 启动失败"); device.setText(error.toString()); });
                 } finally {
                     rootProcess = null;
                     nxpStopFile = null;
@@ -1027,7 +1052,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
                 }
             });
         } catch (Exception error) {
-            state.setText("NXP 图像准备失败");
+            state.setText(label + " 图像准备失败");
             device.setText(error.getMessage());
         }
     }

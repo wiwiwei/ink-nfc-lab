@@ -2,6 +2,10 @@ package dev.inknfclab;
 
 public final class NfcVendorTest {
     public static void main(String[] args) {
+        expect(NfcVendor.Kind.THN31, "/system/app/NfcNci/base.apk", "persist.sys.nfc.chip_name=THN31");
+        expect(NfcVendor.Kind.THN31, "", "other=value persist.sys.nfc.chip_name=THN31 ");
+        expect(NfcVendor.Kind.UNKNOWN, "", "libnfc-tms.conf exists");
+        expect(NfcVendor.Kind.UNKNOWN, "", "persist.sys.nfc.chip_name=THN310");
         expect(NfcVendor.Kind.ST, "/system/app/Nfc_st/Nfc_st.apk", "ro.vendor.nfc.chip=PN557");
         expect(NfcVendor.Kind.NXP, "/system/app/Nfc_nxp/Nfc_nxp.apk", "ro.strongbox.model=ST54L");
         expect(NfcVendor.Kind.ST, "/system/app/NfcNci/base.apk", "ro.strongbox.model=ST54L");

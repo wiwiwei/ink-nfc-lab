@@ -12,6 +12,15 @@ public final class ImageTransfer {
         void trace(String message);
     }
 
+    /** APDU transport for controllers which cannot expose a system Tag. */
+    public interface ApduLink {
+        boolean isConnected();
+        int getMaxTransceiveLength();
+        byte[] transceive(byte[] command) throws Exception;
+        int getTimeout();
+        void setTimeout(int milliseconds);
+    }
+
     interface RefreshLink {
         byte[] transceive(byte[] command) throws Exception;
         int getTimeout();
@@ -24,6 +33,24 @@ public final class ImageTransfer {
     }
 
     public static void send(IsoDep link, byte[] packed, Progress progress) throws Exception {
+        if (link == null) throw new IllegalStateException("ISO-DEP连接已断开");
+        send(new ApduLink() {
+            @Override public boolean isConnected() { return link.isConnected(); }
+            @Override public int getMaxTransceiveLength() { return link.getMaxTransceiveLength(); }
+            @Override public byte[] transceive(byte[] command) throws Exception { return link.transceive(command); }
+            @Override public int getTimeout() { return link.getTimeout(); }
+            @Override public void setTimeout(int milliseconds) { link.setTimeout(milliseconds); }
+        }, packed, progress);
+    }
+
+    public static void send(ApduLink link, byte[] packed, Progress progress) throws Exception {
+        send(link, packed, progress, new RefreshClock() {
+            @Override public long now() { return android.os.SystemClock.elapsedRealtime(); }
+            @Override public void sleep(long milliseconds) throws Exception { Thread.sleep(milliseconds); }
+        });
+    }
+
+    static void send(ApduLink link, byte[] packed, Progress progress, RefreshClock clock) throws Exception {
         if (link == null || !link.isConnected()) throw new IllegalStateException("ISO-DEP连接已断开");
         if (packed == null || packed.length != ImageCodec.PACKED_LENGTH)
             throw new IllegalArgumentException("图像数据长度错误，拒绝写入");
@@ -47,10 +74,7 @@ public final class ImageTransfer {
             @Override public byte[] transceive(byte[] command) throws Exception { return link.transceive(command); }
             @Override public int getTimeout() { return link.getTimeout(); }
             @Override public void setTimeout(int milliseconds) { link.setTimeout(milliseconds); }
-        }, new RefreshClock() {
-            @Override public long now() { return android.os.SystemClock.elapsedRealtime(); }
-            @Override public void sleep(long milliseconds) throws Exception { Thread.sleep(milliseconds); }
-        }, progress, packets.size());
+        }, clock, progress, packets.size());
     }
 
     static void refresh(RefreshLink link, RefreshClock clock, Progress progress, int packetCount) throws Exception {

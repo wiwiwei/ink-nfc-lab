@@ -2,7 +2,7 @@
 
 # Ink NFC Lab · 华为 NFC 四色墨水屏
 
-选择图片、预览四色点阵并刷入原厂驱动板。**目前只有小米 17 / ST54L / Root 路线完成真机刷屏验证**；NXP Q-Poll 为新增实验后端，其他机型不能仅凭芯片厂商推断可用。
+选择图片、预览四色点阵并刷入原厂驱动板。小米 17 / ST54L / Root 路线已完成真机刷屏验证；新增 THN31 Root 适配移植自已在 PLQ110 验证刷屏的探针，不设手机型号或 Android 版本白名单，移植后的 App 尚待真机复验。NXP Q-Poll 仍为实验后端，其他机型不能仅凭芯片厂商推断可用。
 
 ## NFC 厂商与兼容性
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | ST（如当前小米 17 的 ST54L） | 小米 17 已完成 7A 唤醒、D1、传图和刷新；其他 ST 机型未适配 | 已验证后端需要 Root。小米 17 上 ADB Shell 可设置并恢复 7A，但系统随后重选 MIFARE，尚未实现完整免 Root 刷图。 |
 | NXP | 已加入 QTag/Q-Poll Shell 后端及 D1/传图流程，**尚无本项目 NXP 真机成功记录** | 可选择电脑 ADB Shell 或 App 内 Root；ROM 是否开放私有命令、是否真正发出 Q-Poll、能否获得 ISO-DEP 标签均需分别验证。ADB 方案目前不是纯手机操作。 |
-| 紫光青藤 THN31 等 | 仅有芯片/设备线索，没有 7A 或刷屏验证 | 需先确认实际控制器、系统接口和权限，不能照搬 ST/NXP 命令。 |
+| 紫光青藤 THN31 | 已移植 Root Q 轮询与自有 NCI 会话；源探针在 PLQ110 已确认刷屏，集成版本待真机复验 | 不设手机型号或 Android 版本白名单；需要 Root、实时芯片属性、HAL 接口与 NFC 库指纹匹配。不交给系统 `IsoDep`。空口 7 位 `7A` 尚无仪器测量。见 [适配说明](docs/THN31_BACKEND.md)。 |
 | 普通 Android NFC / iPhone | 已激活 ISO-DEP 后才可能传 APDU；没有通用的公开 7-bit 7A 寻卡接口 | 知道 UID 不能跳过寻卡与激活。iOS 尚无本项目实现或兼容结论。 |
 
 机型证据、其他控制器厂商及核验等级见 [NFC 控制器调查](docs/NFC_CONTROLLER_SURVEY.md)；[多设备与免 Root 分析](docs/DEVICE_COMPATIBILITY.md)及 [小米 17 ADB 实验结论](docs/ADB_BACKEND_FINDINGS.md)说明为什么“能发命令”“读到 Tag”“完整刷屏”是不同结果。**不要将“小米系列”整体标为 NXP 或 ST，也不要把系统目录中有某厂商配置文件视为实际装配证据。**
